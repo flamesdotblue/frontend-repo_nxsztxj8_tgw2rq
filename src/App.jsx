@@ -1,29 +1,29 @@
-import { useState } from 'react';
-import Header from './components/Header.jsx';
-import Hero from './components/Hero.jsx';
-import LanguageSwitcher from './components/LanguageSwitcher.jsx';
-import NewsFeed from './components/NewsFeed.jsx';
+import { useState } from "react";
+import Header from "./components/Header.jsx";
+import Hero from "./components/Hero.jsx";
+import LanguageSwitcher from "./components/LanguageSwitcher.jsx";
+import NewsFeed from "./components/NewsFeed.jsx";
 
 export default function App() {
-  const [language, setLanguage] = useState('en');
+  const [language, setLanguage] = useState("en");
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-[#050507] text-white">
       <Header />
+      <Hero />
 
-      <main className="max-w-6xl mx-auto px-4 md:px-6">
-        <Hero />
-
-        <div className="flex items-center justify-between gap-4 py-4">
-          <h2 className="text-lg md:text-xl font-semibold tracking-tight">Your Personalized News Pulse</h2>
+      <main className="max-w-6xl mx-auto px-4 -mt-10">
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
           <LanguageSwitcher value={language} onChange={setLanguage} />
         </div>
-
-        <NewsFeed language={language} />
       </main>
 
-      <footer className="mt-16 py-8 text-center text-sm text-zinc-400">
-        © {new Date().getFullYear()} News Pulse AI — Built for fast, multi-language news discovery.
+      <NewsFeed language={language} />
+
+      <footer className="py-10 text-center text-white/40 text-sm">
+        <div className="max-w-6xl mx-auto px-4">
+          Built for preview — dark, elegant, and fast. Add real feeds and AI next.
+        </div>
       </footer>
     </div>
   );
