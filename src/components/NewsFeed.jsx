@@ -23,13 +23,13 @@ function parseRSS(xmlString) {
     link: item.querySelector('link')?.textContent?.trim() || '#',
     pubDate:
       item.querySelector('pubDate')?.textContent ||
-      item.querySelector('dc\:date')?.textContent ||
+      item.querySelector('dc\\:date')?.textContent ||
       item.querySelector('updated')?.textContent ||
       item.querySelector('published')?.textContent ||
       '',
     description:
       item.querySelector('description')?.textContent ||
-      item.querySelector('content\:encoded')?.textContent ||
+      item.querySelector('content\\:encoded')?.textContent ||
       '',
   }));
 
@@ -57,9 +57,20 @@ async function fetchViaAllOrigins(url) {
   return data.contents;
 }
 
+function buildJinaUrl(originalUrl) {
+  // Jina Reader expects: https://r.jina.ai/http://<host><path>?<query>
+  // We map https://example.com/a?b=c -> https://r.jina.ai/http://example.com/a?b=c
+  try {
+    const u = new URL(originalUrl);
+    return `https://r.jina.ai/http://${u.host}${u.pathname}${u.search}`;
+  } catch {
+    // Fallback to passing raw if URL parsing fails
+    return `https://r.jina.ai/http://${originalUrl.replace(/^https?:\/\//, '')}`;
+  }
+}
+
 async function fetchViaJinaReader(url) {
-  // Jina reader returns raw HTML/XML as text, good as a fallback when other proxies fail
-  const proxied = `https://r.jina.ai/http://$${''}{url}`.replace('$', '').replace('{url}', url);
+  const proxied = buildJinaUrl(url);
   const res = await fetch(proxied);
   if (!res.ok) throw new Error('Network error');
   return await res.text();
