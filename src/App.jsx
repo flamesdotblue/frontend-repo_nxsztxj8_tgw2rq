@@ -1,45 +1,30 @@
-import { useRef, useState } from 'react'
-import Header from './components/Header'
-import Hero from './components/Hero'
-import LanguageSwitcher from './components/LanguageSwitcher'
-import NewsFeed from './components/NewsFeed'
+import { useState } from 'react';
+import Header from './components/Header.jsx';
+import Hero from './components/Hero.jsx';
+import LanguageSwitcher from './components/LanguageSwitcher.jsx';
+import NewsFeed from './components/NewsFeed.jsx';
 
-function App() {
-  const [language, setLanguage] = useState('en')
-  const feedRef = useRef(null)
-
-  const scrollToFeed = () => {
-    document.getElementById('feed')?.scrollIntoView({ behavior: 'smooth' })
-  }
+export default function App() {
+  const [language, setLanguage] = useState('en');
 
   return (
-    <div className="min-h-screen bg-black">
+    <div className="min-h-screen bg-black text-white">
       <Header />
 
-      <Hero onExplore={scrollToFeed} />
+      <main className="max-w-6xl mx-auto px-4 md:px-6">
+        <Hero />
 
-      <div className="bg-black border-y border-yellow-500/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-          <div className="text-white/90 text-sm">
-            Multi-language and audio-ready. Choose your preferred language.
-          </div>
+        <div className="flex items-center justify-between gap-4 py-4">
+          <h2 className="text-lg md:text-xl font-semibold tracking-tight">Your Personalized News Pulse</h2>
           <LanguageSwitcher value={language} onChange={setLanguage} />
         </div>
-      </div>
 
-      <div ref={feedRef}>
         <NewsFeed language={language} />
-      </div>
+      </main>
 
-      <footer className="bg-black border-t border-yellow-500/20 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-gray-400 text-sm">
-            © {new Date().getFullYear()} News Pulse AI. All rights reserved. Azad Studio section is free for everyone. Premium unlocks Hyderabad, Telangana, India, International, Sports & Founders.
-          </div>
-        </div>
+      <footer className="mt-16 py-8 text-center text-sm text-zinc-400">
+        © {new Date().getFullYear()} News Pulse AI — Built for fast, multi-language news discovery.
       </footer>
     </div>
-  )
+  );
 }
-
-export default App

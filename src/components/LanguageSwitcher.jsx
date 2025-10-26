@@ -1,25 +1,24 @@
-const LANG_LABELS = {
-  en: 'English',
-  hi: 'हिंदी',
-  ur: 'اردو',
-  te: 'తెలుగు',
-  ru: 'Roman Urdu',
-}
+const languages = [
+  { code: 'en', label: 'English' },
+  { code: 'hi', label: 'Hindi' },
+  { code: 'ur', label: 'Urdu (Roman)' },
+  { code: 'te', label: 'Telugu' },
+  { code: 'ru', label: 'Russian' },
+];
 
 export default function LanguageSwitcher({ value, onChange }) {
   return (
     <div className="inline-flex items-center gap-2">
-      <label className="text-sm text-gray-200">Language</label>
+      <label className="text-sm text-zinc-400">Language</label>
       <select
-        aria-label="Select language"
+        className="bg-zinc-900 border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-black text-gray-100 border border-yellow-500/40 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-yellow-500"
       >
-        {Object.entries(LANG_LABELS).map(([code, label]) => (
-          <option value={code} key={code} className="text-black">{label}</option>
+        {languages.map((l) => (
+          <option key={l.code} value={l.code}>{l.label}</option>
         ))}
       </select>
     </div>
-  )
+  );
 }

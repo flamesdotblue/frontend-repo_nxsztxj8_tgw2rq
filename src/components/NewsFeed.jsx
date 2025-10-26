@@ -1,276 +1,290 @@
-import { Volume2, Play, Pause } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Volume2, VolumeX, Globe, ExternalLink } from 'lucide-react';
 
-const BRAND_LOGO = (
-  <div className="mr-2 shrink-0 h-6 w-6 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 ring-2 ring-yellow-500/50 flex items-center justify-center text-[10px] font-bold text-black">NP</div>
-)
-
-const translations = {
-  en: (text) => text,
-  ru: (text) => text, // roman urdu provided side-by-side
-  hi: () => 'यह एक उदाहरण समाचार सारांश है — वास्तविक डेटा एकीकृत किया जाएगा।',
-  ur: () => 'یہ ایک مثال خبر خلاصہ ہے — اصل ڈیٹا شامل کیا جائے گا۔',
-  te: () => 'ఇది ఒక నమూనా వార్తల సంగ్రహం — నిజమైన డేటా సమకాలీకరించబడుతుంది.',
-}
-
-const romanUrduForBullets = [
-  'AI avatar se aasan tareeqay se news suniye',
-  'Har khabar ka 3 point me English summary',
-  'Instant translation aur audio playback sab languages me',
-]
-
+// Premium sources mapping
 const premiumSources = {
   Hyderabad: 'https://telanganatoday.com/category/hyderabad/feed',
   Telangana: 'https://telanganatoday.com/category/telangana/feed',
   India: 'https://feeds.feedburner.com/ndtvnews-india-news',
   International: 'https://www.thehindu.com/news/international/feeder/default.rss',
   Sports: 'https://feeds.feedburner.com/ndtvsports-latest',
+};
+
+// Parse RSS/Atom content to a normalized list of items
+function parseRSS(xmlString) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlString, 'text/xml');
+
+  // Handle parsererror
+  if (doc.querySelector('parsererror')) return [];
+
+  const items = [...doc.querySelectorAll('item')].map((item) => ({
+    title: item.querySelector('title')?.textContent?.trim() || 'Untitled',
+    link: item.querySelector('link')?.textContent?.trim() || '#',
+    pubDate:
+      item.querySelector('pubDate')?.textContent ||
+      item.querySelector('dc\:date')?.textContent ||
+      item.querySelector('updated')?.textContent ||
+      item.querySelector('published')?.textContent ||
+      '',
+    description:
+      item.querySelector('description')?.textContent ||
+      item.querySelector('content\:encoded')?.textContent ||
+      '',
+  }));
+
+  if (items.length) return items;
+
+  // Atom fallback
+  const entries = [...doc.querySelectorAll('entry')].map((entry) => ({
+    title: entry.querySelector('title')?.textContent?.trim() || 'Untitled',
+    link: entry.querySelector('link')?.getAttribute('href') || '#',
+    pubDate:
+      entry.querySelector('updated')?.textContent ||
+      entry.querySelector('published')?.textContent ||
+      '',
+    description: entry.querySelector('summary')?.textContent || '',
+  }));
+
+  return entries;
 }
 
-function useVoices() {
-  const [voices, setVoices] = useState([])
-  useEffect(() => {
-    function update() {
-      const v = window.speechSynthesis?.getVoices?.() || []
-      setVoices(v)
-    }
-    update()
-    if (typeof window !== 'undefined') {
-      window.speechSynthesis?.addEventListener?.('voiceschanged', update)
-      return () => window.speechSynthesis?.removeEventListener?.('voiceschanged', update)
-    }
-  }, [])
-  return voices
+async function fetchViaAllOrigins(url) {
+  const proxied = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+  const res = await fetch(proxied);
+  if (!res.ok) throw new Error('Network error');
+  const data = await res.json();
+  return data.contents;
 }
 
-function pickVoice(voices, langCode) {
-  const langMap = {
-    en: 'en',
-    hi: 'hi',
-    ur: 'ur',
-    te: 'te',
-    ru: 'en', // roman urdu will be spoken in English voice
-  }
-  const pref = langMap[langCode] || 'en'
-  return (
-    voices.find((v) => v.lang?.toLowerCase().startsWith(pref)) ||
-    voices.find((v) => v.lang?.toLowerCase().startsWith('en')) ||
-    voices[0]
-  )
-}
-
-function parseRSS(xmlText, limit = 6) {
-  try {
-    const doc = new DOMParser().parseFromString(xmlText, 'application/xml')
-    const items = Array.from(doc.querySelectorAll('item')).slice(0, limit).map((it) => ({
-      title: it.querySelector('title')?.textContent?.trim() || 'Untitled',
-      link: it.querySelector('link')?.textContent?.trim() || '#',
-      pubDate: it.querySelector('pubDate')?.textContent?.trim() || '',
-      source: doc.querySelector('channel > title')?.textContent?.trim() || 'RSS',
-    }))
-    return items
-  } catch (e) {
-    console.error('RSS parse error', e)
-    return []
-  }
+async function fetchViaJinaReader(url) {
+  // Jina reader returns raw HTML/XML as text, good as a fallback when other proxies fail
+  const proxied = `https://r.jina.ai/http://$${''}{url}`.replace('$', '').replace('{url}', url);
+  const res = await fetch(proxied);
+  if (!res.ok) throw new Error('Network error');
+  return await res.text();
 }
 
 function useRss(url, limit = 6) {
-  const [state, setState] = useState({ loading: true, error: null, items: [] })
+  const [state, setState] = useState({ loading: true, error: null, items: [] });
 
   useEffect(() => {
-    let alive = true
+    let active = true;
+
     async function run() {
-      setState({ loading: true, error: null, items: [] })
+      setState({ loading: true, error: null, items: [] });
       try {
-        const proxied = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
-        const res = await fetch(proxied)
-        if (!res.ok) throw new Error('Network error')
-        const data = await res.json()
-        const items = parseRSS(data.contents, limit)
-        if (alive) setState({ loading: false, error: null, items })
-      } catch (e) {
-        console.error('RSS fetch error', e)
-        if (alive) setState({ loading: false, error: 'Failed to load', items: [] })
+        let xml = '';
+        try {
+          xml = await fetchViaAllOrigins(url);
+        } catch (e) {
+          xml = await fetchViaJinaReader(url);
+        }
+        const items = parseRSS(xml).slice(0, limit);
+        if (active) setState({ loading: false, error: null, items });
+      } catch (err) {
+        if (active) setState({ loading: false, error: 'Failed to load feed', items: [] });
       }
     }
-    run()
-    return () => {
-      alive = false
-    }
-  }, [url, limit])
 
-  return state
+    run();
+    const id = setInterval(run, 5 * 60 * 1000); // refresh every 5 minutes
+
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, [url, limit]);
+
+  return state;
 }
 
-export default function NewsFeed({ language }) {
-  const [playingId, setPlayingId] = useState(null)
-  const voices = useVoices()
-  const utterRef = useRef(null)
+function formatDate(dateStr) {
+  const d = new Date(dateStr);
+  if (!isFinite(d.getTime())) return '';
+  return d.toLocaleString();
+}
 
-  useEffect(() => {
-    return () => {
-      window.speechSynthesis?.cancel?.()
-    }
-  }, [])
-
-  function speak(text, id, langCode) {
-    try {
-      window.speechSynthesis?.cancel?.()
-      const utter = new SpeechSynthesisUtterance(text)
-      utter.lang = langCode === 'ru' ? 'en-US' : `${langCode}-${langCode.toUpperCase()}`
-      const voice = pickVoice(voices, langCode)
-      if (voice) utter.voice = voice
-      utter.onend = () => setPlayingId(null)
-      utter.onerror = () => setPlayingId(null)
-      utterRef.current = utter
-      setPlayingId(id)
-      window.speechSynthesis?.speak?.(utter)
-    } catch (e) {
-      console.error(e)
-      setPlayingId(null)
-    }
-  }
-
-  function stop() {
-    window.speechSynthesis?.cancel?.()
-    setPlayingId(null)
-  }
-
-  const freeItem = {
-    id: 'az1',
-    source: 'Azad Studio — Free',
-    title: "Today's Highlights",
-    bullets: [
-      'Key updates from Hyderabad and Telangana',
-      'Sports roundup with major wins and transfers',
-      'Spotlight: Vision and mission for better news',
-    ],
-  }
-
-  const renderedFree = useMemo(() => {
-    const roman = romanUrduForBullets
-    return (
-      <article className="bg-white/5 border border-yellow-500/20 rounded-xl p-4 md:p-5 text-white">
-        <header className="flex items-center text-sm text-gray-300 mb-2">
-          {BRAND_LOGO}
-          <span>{freeItem.source}</span>
-        </header>
-        <h3 className="text-lg md:text-xl font-semibold mb-3">{freeItem.title}</h3>
-        <div className="grid md:grid-cols-2 gap-4">
-          <ul className="space-y-2 list-disc list-inside text-gray-100">
-            {freeItem.bullets.map((b, idx) => (
-              <li key={idx} className="">
-                <span className="font-medium">{b}</span>
-                <div className="text-xs text-gray-300 ml-5 mt-1">{roman[idx]}</div>
-                {language !== 'en' && (
-                  <div className="text-xs text-gray-300 ml-5 mt-1">{translations[language](b)}</div>
-                )}
-              </li>
-            ))}
-          </ul>
-          <div className="flex flex-col justify-between">
-            <div className="text-sm text-gray-300">Listen to this summary in your preferred language.</div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => speak(freeItem.bullets.join('. '), freeItem.id + '-en', 'en')}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-yellow-500 text-black text-sm font-semibold hover:bg-yellow-400"
-              >
-                <Volume2 size={16} /> English
-              </button>
-              <button
-                onClick={() => speak(roman.join('. '), freeItem.id + '-ru', 'ru')}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 text-sm hover:bg-yellow-500/30"
-              >
-                <Volume2 size={16} /> Roman Urdu
-              </button>
-              {['hi', 'ur', 'te'].includes(language) && (
-                <button
-                  onClick={() => speak(freeItem.bullets.map((b) => translations[language](b)).join('. '), freeItem.id + '-' + language, language)}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 text-sm hover:bg-yellow-500/30"
-                >
-                  <Volume2 size={16} /> Speak Selected
-                </button>
-              )}
-              {playingId ? (
-                <button onClick={stop} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white text-sm hover:bg-white/20">
-                  <Pause size={16} /> Stop
-                </button>
-              ) : (
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-white/5 border border-white/10 text-white/70 text-sm">
-                  <Play size={16} /> Ready
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </article>
-    )
-  }, [language, playingId])
-
+function SectionFeed({ title, url }) {
+  const { loading, error, items } = useRss(url, 6);
   return (
-    <section id="feed" className="bg-black py-8 md:py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-end justify-between">
-          <div>
-            <h2 className="text-2xl md:text-3xl font-bold text-white">Azad Studio — Free</h2>
-            <p className="text-gray-300 text-sm">Curated highlights for everyone</p>
-          </div>
-          <a href="#premium" className="text-yellow-400 text-sm">Jump to Sections →</a>
-        </div>
-
-        <div className="space-y-4">{renderedFree}</div>
-
-        <div id="premium" className="mt-10 md:mt-14">
-          <h3 className="text-xl md:text-2xl font-semibold text-white mb-4">Live Sections</h3>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Object.entries(premiumSources).map(([sec, url]) => (
-              <SectionFeed key={sec} section={sec} url={url} />
-            ))}
-            <FoundersSection />
-          </div>
-        </div>
+    <section id="premium" className="mt-8">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xl md:text-2xl font-semibold">{title}</h3>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-zinc-400 hover:text-white inline-flex items-center gap-1"
+        >
+          Open source <ExternalLink className="w-3.5 h-3.5" />
+        </a>
+      </div>
+      {loading && <p className="mt-3 text-zinc-400">Loading latest headlines…</p>}
+      {error && (
+        <p className="mt-3 text-red-300">
+          Could not load this feed right now. It may be rate-limited. Please try again shortly.
+        </p>
+      )}
+      <div className="mt-4 grid md:grid-cols-2 gap-4">
+        {items.map((item, idx) => (
+          <a
+            key={idx}
+            href={item.link}
+            target="_blank"
+            rel="noreferrer"
+            className="block p-4 rounded-xl border border-white/10 bg-zinc-900/50 hover:bg-zinc-900 transition"
+          >
+            <h4 className="font-medium line-clamp-2">{item.title}</h4>
+            {item.pubDate && (
+              <p className="mt-1 text-xs text-zinc-400">{formatDate(item.pubDate)}</p>
+            )}
+          </a>
+        ))}
       </div>
     </section>
-  )
+  );
 }
 
-function SectionFeed({ section, url }) {
-  const { loading, error, items } = useRss(url, 6)
+function FreeHighlights({ language, tts }) {
+  const highlights = useMemo(
+    () => [
+      'Top stories curated for speed and signal.',
+      'AI summaries in your preferred language.',
+      'Listen on the go with instant audio.',
+    ],
+    []
+  );
+
+  const translated = useMemo(() => translateList(highlights, language), [highlights, language]);
+
   return (
-    <div className="rounded-xl border border-yellow-500/20 bg-gradient-to-br from-white/5 to-white/0 p-4 text-white">
-      <div className="flex items-center gap-2 text-yellow-300 mb-2">
-        {BRAND_LOGO}
-        <span className="text-sm">{section}</span>
+    <section id="news" className="mt-10">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xl md:text-2xl font-semibold">Azad Studio — Free</h3>
+        <div className="flex items-center gap-2 text-zinc-300">
+          <Globe className="w-4 h-4" />
+          <span className="text-xs">Auto-translate + Audio</span>
+        </div>
       </div>
-      {loading && <div className="text-sm text-gray-400">Loading latest from {section}…</div>}
-      {error && <div className="text-sm text-red-300">Unable to load {section} right now.</div>}
-      {!loading && !error && (
-        <ul className="space-y-2">
-          {items.map((it, idx) => (
-            <li key={idx} className="text-sm">
-              <a className="text-gray-100 hover:text-yellow-300 underline decoration-yellow-600/40 underline-offset-2" href={it.link} target="_blank" rel="noreferrer">
-                {it.title}
-              </a>
-              {it.pubDate && <div className="text-[11px] text-gray-400">{new Date(it.pubDate).toLocaleString()}</div>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
+
+      <ul className="mt-4 grid md:grid-cols-2 gap-3">
+        {translated.map((text, i) => (
+          <li key={i} className="p-4 rounded-xl border border-white/10 bg-zinc-900/50">
+            <p className="leading-relaxed">{text}</p>
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-4 flex items-center gap-2">
+        {!tts.isSpeaking ? (
+          <button
+            onClick={tts.start}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-black text-sm font-medium hover:bg-zinc-100"
+          >
+            <Volume2 className="w-4 h-4" /> Play highlights
+          </button>
+        ) : (
+          <button
+            onClick={tts.stop}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/20 text-sm hover:bg-white/10"
+          >
+            <VolumeX className="w-4 h-4" /> Stop
+          </button>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function FoundersSection() {
   return (
-    <div className="rounded-xl border border-yellow-500/20 bg-gradient-to-br from-white/5 to-white/0 p-4 text-white">
-      <div className="flex items-center gap-2 text-yellow-300 mb-2">
-        {BRAND_LOGO}
-        <span className="text-sm">Founders</span>
+    <section className="mt-12">
+      <h3 className="text-xl md:text-2xl font-semibold">Founders</h3>
+      <p className="mt-2 text-zinc-300 max-w-2xl">
+        Meet the minds behind the product. This section is unlocked for visual testing — share photos and bios to populate.
+      </p>
+      <div className="mt-4 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {['Founder One', 'Founder Two', 'Founder Three'].map((name) => (
+          <div key={name} className="p-4 rounded-xl border border-white/10 bg-zinc-900/50">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-300 to-emerald-400" />
+            <h4 className="mt-3 font-medium">{name}</h4>
+            <p className="text-sm text-zinc-400">Short bio to be added.</p>
+          </div>
+        ))}
       </div>
-      <div className="text-sm text-gray-200">
-        Meet the minds behind News Pulse AI. Share photos and bios to feature here with a clean card layout.
+    </section>
+  );
+}
+
+// Simple, local translation mock to fulfill multi-language cue (no external API)
+function translateList(list, lang) {
+  const maps = {
+    hi: {
+      'Top stories curated for speed and signal.': 'शीर्ष खबरें तेज़ी और सटीकता के साथ चुनी गई।',
+      'AI summaries in your preferred language.': 'आपकी पसंदीदा भाषा में एआई सारांश।',
+      'Listen on the go with instant audio.': 'तुरंत ऑडियो के साथ चलते-फिरते सुनें।',
+    },
+    ur: {
+      'Top stories curated for speed and signal.': 'Behtareen khabren raftaar aur wazahat ke sath.',
+      'AI summaries in your preferred language.': 'Aapki pasandeeda zabaan mein AI khulasa.',
+      'Listen on the go with instant audio.': 'Foran audio ke sath kahin bhi suniye.',
+    },
+    te: {
+      'Top stories curated for speed and signal.': 'వేగం మరియు స్పష్టతతో ఎంపిక చేసిన ప్రధాన కథలు.',
+      'AI summaries in your preferred language.': 'మీ ఇష్టమైన భాషలో AI సారాంశాలు.',
+      'Listen on the go with instant audio.': 'తక్షణ ఆడియోతో ఎక్కడైనా వినండి.',
+    },
+    ru: {
+      'Top stories curated for speed and signal.': 'Главные новости — быстро и по делу.',
+      'AI summaries in your preferred language.': 'AI‑резюме на вашем языке.',
+      'Listen on the go with instant audio.': 'Слушайте в пути с мгновенным аудио.',
+    },
+  };
+  return list.map((s) => maps[lang]?.[s] || s);
+}
+
+function useSpeech() {
+  const [isSpeaking, setSpeaking] = useState(false);
+  const utterRef = useRef(null);
+
+  function start() {
+    if (isSpeaking) return;
+    const text = [
+      'Top stories curated for speed and signal.',
+      'AI summaries in your preferred language.',
+      'Listen on the go with instant audio.',
+    ].join(' ');
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.onend = () => setSpeaking(false);
+    utter.onerror = () => setSpeaking(false);
+    setSpeaking(true);
+    utterRef.current = utter;
+    window.speechSynthesis.speak(utter);
+  }
+
+  function stop() {
+    window.speechSynthesis.cancel();
+    setSpeaking(false);
+  }
+
+  return { isSpeaking, start, stop };
+}
+
+export default function NewsFeed({ language }) {
+  const tts = useSpeech();
+
+  return (
+    <div>
+      <FreeHighlights language={language} tts={tts} />
+
+      <div className="mt-12 grid gap-8">
+        {Object.entries(premiumSources).map(([title, url]) => (
+          <SectionFeed key={title} title={title} url={url} />
+        ))}
       </div>
+
+      <FoundersSection />
     </div>
-  )
+  );
 }
